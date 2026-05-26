@@ -2885,10 +2885,11 @@ function CalShell({
   const todayStr = isoToday();
   const offset = calStart(year, month);
   const days = daysIn(year, month);
-  const CELL_H = 90,
+  const isMobile = window.innerWidth < 600;
+  const CELL_H = isMobile ? 70 : 90,
     GAP = 3,
-    BAR_TOP = 26,
-    BAR_H = 15;
+    BAR_TOP = isMobile ? 20 : 26,
+    BAR_H = 14;
   function dsForDay(d) {
     return `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
@@ -3001,6 +3002,7 @@ function CalShell({
     return /*#__PURE__*/React.createElement("div", {
       key: day,
       onClick: () => onDayClick && onDayClick(ds),
+      className: "cal-cell",
       style: {
         minHeight: CELL_H,
         borderRadius: 10,
@@ -3178,6 +3180,19 @@ function ContentView({
       gap: 6
     }
   }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setCalView(v => v === "grid" ? "list" : "grid"),
+    style: {
+      padding: "6px 10px",
+      borderRadius: 20,
+      fontSize: 11,
+      fontWeight: 800,
+      background: "rgba(255,255,255,.1)",
+      border: "none",
+      color: "#F4EFE6",
+      cursor: "pointer",
+      fontFamily: F
+    }
+  }, calView === "grid" ? "📋 Liste" : "📅 Kalender"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setShowRegular(x => !x),
     style: {
       padding: "6px 12px",
@@ -5344,6 +5359,7 @@ function TeamCalView({
   syncHyla,
   setSyncHyla
 }) {
+  const [calView, setCalView] = useState(window.innerWidth < 600 ? "list" : "grid");
   const today = new Date();
   const [vd, setVd] = useState({
     y: today.getFullYear(),
@@ -5519,7 +5535,7 @@ function TeamCalView({
         return /*#__PURE__*/React.createElement("div", {
           key: ev.id + i,
           style: {
-            fontSize: 9,
+            fontSize: 10,
             padding: "2px 4px",
             borderRadius: 4,
             background: evColor + "22",
@@ -5600,7 +5616,152 @@ function TeamCalView({
         }, m.av, " ")), "\uD83D\uDEA8 ", t.title);
       }));
     }
-  }), /*#__PURE__*/React.createElement("div", {
+  }), calView === "list" && (() => {
+    const today = isoToday();
+    const allDays = [];
+    // Show current month days
+    const y = calYear,
+      m = calMonth;
+    const days = daysIn(y, m);
+    for (let d = 1; d <= days; d++) {
+      const ds = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const evs = eventsForDate(ds);
+      const dayTasks = tasksForDate(ap, ds);
+      if (evs.length > 0 || dayTasks.length > 0 || ds === today) {
+        allDays.push({
+          ds,
+          evs,
+          dayTasks
+        });
+      }
+    }
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "0 4px"
+      }
+    }, allDays.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        textAlign: "center",
+        color: MUTED,
+        padding: "40px 0",
+        fontFamily: F,
+        fontSize: 13
+      }
+    }, "Keine Termine in diesem Monat"), allDays.map(({
+      ds,
+      evs,
+      dayTasks
+    }) => {
+      const date = new Date(ds + 'T12:00:00');
+      const isToday = ds === today;
+      const dayLabel = date.toLocaleDateString('de-DE', {
+        weekday: 'short',
+        day: '2-digit',
+        month: 'short'
+      });
+      return /*#__PURE__*/React.createElement("div", {
+        key: ds,
+        onClick: () => {
+          setDayModal(ds);
+        },
+        style: {
+          marginBottom: 8,
+          borderRadius: 12,
+          overflow: "hidden",
+          border: isToday ? "2px solid #C4AF8C" : `1.5px solid ${BORD}`,
+          background: isToday ? "rgba(196,175,140,.15)" : CARD,
+          cursor: "pointer"
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          padding: "8px 12px",
+          background: isToday ? "#C4AF8C22" : BG,
+          borderBottom: `1px solid ${BORD}`,
+          display: "flex",
+          alignItems: "center",
+          gap: 8
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 13,
+          fontWeight: 800,
+          color: isToday ? "#7a6a50" : DARK,
+          fontFamily: F
+        }
+      }, dayLabel), isToday && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 10,
+          fontWeight: 800,
+          color: "#7a6a50",
+          background: "#C4AF8C33",
+          borderRadius: 6,
+          padding: "2px 6px",
+          fontFamily: F
+        }
+      }, "Heute")), /*#__PURE__*/React.createElement("div", {
+        style: {
+          padding: "8px 12px"
+        }
+      }, evs.map((ev, i) => {
+        const atts = ev.attendees || [];
+        const isTeamEv = atts.length === 0 || atts.length > 1;
+        const isHylaEv = ev.type === "hyla";
+        const evColor = isHylaEv ? "#4ECDC4" : isTeamEv ? "#1B2A3B" : teamMember(atts[0])?.color || "#1B2A3B";
+        return /*#__PURE__*/React.createElement("div", {
+          key: ev.id + i,
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 4
+          }
+        }, /*#__PURE__*/React.createElement("div", {
+          style: {
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: evColor,
+            flexShrink: 0
+          }
+        }), /*#__PURE__*/React.createElement("div", {
+          style: {
+            fontSize: 13,
+            color: DARK,
+            fontFamily: F,
+            flex: 1
+          }
+        }, ev.time && /*#__PURE__*/React.createElement("span", {
+          style: {
+            color: evColor,
+            fontWeight: 800,
+            marginRight: 6
+          }
+        }, ev.time), ev.title));
+      }), dayTasks.filter(t => t.dueDate === ds).map(t => /*#__PURE__*/React.createElement("div", {
+        key: t.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 4
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: t.important ? "#FF2D8B" : "#E63946",
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 13,
+          color: DARK,
+          fontFamily: F
+        }
+      }, "\uD83D\uDEA8 ", t.title)))));
+    }));
+  })(), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12,
       display: "flex",
@@ -9350,6 +9511,10 @@ function App() {
         *{-webkit-tap-highlight-color:transparent;box-sizing:border-box;}
         body{overflow-x:hidden;}
         select option{background:#FDFAF5;color:#1B2A3B;}
+        @media(max-width:480px){
+          .cal-cell{min-height:110px !important;}
+          .cal-grid{gap:2px !important;}
+        }
       `));
 }
 const root = ReactDOM.createRoot(document.getElementById("root"));
