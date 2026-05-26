@@ -5359,7 +5359,7 @@ function TeamCalView({
   syncHyla,
   setSyncHyla
 }) {
-  const [calView, setCalView] = useState(window.innerWidth < 600 ? "list" : "grid");
+  const [calView, setCalView] = useState("grid");
   const today = new Date();
   const [vd, setVd] = useState({
     y: today.getFullYear(),
