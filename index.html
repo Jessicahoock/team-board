@@ -8,7 +8,8 @@
 <meta name="theme-color" content="#1B2A3B">
 <title>✨ Team Board</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;padding:0;min-height:100%;background:#F4EFE6}body{-webkit-font-smoothing:antialiased}#root{min-height:100%}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#C8C0B4;border-radius:4px}</style>
+<style>*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;padding:0;min-height:100%;background:#F4EFE6}body{-webkit-font-smoothing:antialiased}#root{min-height:100%}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#C8C0B4;border-radius:4px}
+@media(max-width:480px){.cal-cell{min-height:110px !important;}}</style>
 </head>
 <body>
 <div id="root"></div>
@@ -2885,11 +2886,10 @@ function CalShell({
   const todayStr = isoToday();
   const offset = calStart(year, month);
   const days = daysIn(year, month);
-  const isMobile = window.innerWidth < 600;
-  const CELL_H = isMobile ? 70 : 90,
+  const CELL_H = 90,
     GAP = 3,
-    BAR_TOP = isMobile ? 20 : 26,
-    BAR_H = 14;
+    BAR_TOP = 26,
+    BAR_H = 15;
   function dsForDay(d) {
     return `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
