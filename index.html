@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#1B2A3B">
 <title>✨ Team Board</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;padding:0;height:100%;overflow-x:hidden;background:#F4EFE6}body{-webkit-font-smoothing:antialiased}#root{height:100%}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#C8C0B4;border-radius:4px}</style>
+<style>*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;padding:0;min-height:100%;background:#F4EFE6}body{-webkit-font-smoothing:antialiased}#root{min-height:100%}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#C8C0B4;border-radius:4px}</style>
 </head>
 <body>
 <div id="root"></div>
@@ -497,6 +497,7 @@ function MindmapPreview() {
     x: 70,
     y: 50
   });
+  const [zoom, setZoom] = useState(1);
   const [panning, setPanning] = useState(false);
   const [panStart, setPanStart] = useState({
     x: 0,
@@ -994,7 +995,12 @@ function MindmapPreview() {
     onDoubleClick: addNode,
     onMouseMove: onMouseMove,
     onMouseUp: onMouseUp,
-    onMouseDown: onBgDown
+    onMouseDown: onBgDown,
+    onWheel: e => {
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(z => Math.min(Math.max(z * factor, 0.2), 4));
+    }
   }, /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("pattern", {
     id: "grid",
     width: "30",
@@ -1017,7 +1023,7 @@ function MindmapPreview() {
     d: "M0,0 L0,6 L8,3 z",
     fill: "#A0988C"
   }))), /*#__PURE__*/React.createElement("g", {
-    transform: `translate(${pan.x},${pan.y})`
+    transform: `translate(${pan.x},${pan.y}) scale(${zoom})`
   }, /*#__PURE__*/React.createElement("rect", {
     x: "-4000",
     y: "-4000",
@@ -1524,7 +1530,7 @@ window.__MindmapPreview = MindmapPreview;
 
 </script>
 <script>
-(function(){var d={"tb-cards": [{"id": "c1", "title": "Content Idee 123", "desc": "", "script": "", "direction": "", "caption": "", "label": "story", "link": "", "fileUrl": "", "chat": [], "column": "skript", "publishDate": "2026-05-28", "assignee": "pauline", "author": "pauline", "isHyla": false, "createdAt": "2026-05-18T20:07:15.616Z"}, {"id": "c2", "title": "Vorstellungspost Jessica", "desc": "", "script": "", "direction": "", "caption": "", "label": "carousel", "link": "", "fileUrl": "", "chat": [], "column": "idee", "publishDate": "2026-05-22", "assignee": null, "author": "pauline", "isHyla": false, "createdAt": "2026-05-18T20:07:25.121Z"}], "tb-tasks": [{"id": "t1", "title": "Weber Haus Kooperation besprechen", "assignees": ["jessica", "kai", "pauline"], "assignedBy": "Pauline", "status": "open", "priority": "high", "important": true, "isNew": false, "dueDate": "2026-05-19", "recur": "none", "endDate": "", "exceptions": [], "notes": "", "link": "", "fileUrl": "", "subtasks": [], "chat": [], "createdAt": "2026-05-18T19:57:57.321Z"}], "tb-links": [], "tb-notes": [], "tb-meetings": [], "tb-events": [{"id": "e1", "title": "Teammeeting", "date": "2026-05-26", "time": "14:00", "recur": "weekly", "endDate": "", "type": "team", "attendees": [], "exceptions": []}]};if(!localStorage.getItem("tb__tb-cards")){for(var k in d){localStorage.setItem("tb__"+k,JSON.stringify({ts:1700000000000,data:d[k]}));}}})();
+(function(){var d={"tb-cards": [], "tb-tasks": [], "tb-links": [], "tb-notes": [], "tb-meetings": [], "tb-events": []};if(!localStorage.getItem("tb__tb-cards")){for(var k in d){localStorage.setItem("tb__"+k,JSON.stringify({ts:1700000000000,data:d[k]}));}}})();
 document.getElementById("__import_file").addEventListener("change",function(e){var f=e.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(ev){try{var d=JSON.parse(ev.target.result);for(var k in d){localStorage.setItem("tb__"+k,JSON.stringify({ts:Date.now(),data:d[k]}));}location.reload();}catch(err){alert(err.message);}};r.readAsText(f);});
 window.__triggerImport=function(){document.getElementById("__import_file").click();};
 </script>
@@ -7610,6 +7616,915 @@ function MindmapTab({
   });
 }
 
+// ─── ZEITERFASSUNG ────────────────────────────────────────────────────────────
+function ZeiterfassungView({
+  userName
+}) {
+  const STORAGE_KEY = 'tb__zeiten__' + userName;
+  async function loadFromSupabase() {
+    try {
+      const res = await fetch(SUPA_URL + '/rest/v1/work_hours?id=eq.root-' + userName + '&select=data', {
+        headers: {
+          apikey: SUPA_KEY,
+          Authorization: 'Bearer ' + SUPA_KEY
+        }
+      });
+      if (res.ok) {
+        const rows = await res.json();
+        if (rows.length > 0 && rows[0].data) {
+          setEntries(rows[0].data);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(rows[0].data));
+        }
+      }
+    } catch {}
+  }
+  function loadEntries() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    } catch {
+      return [];
+    }
+  }
+  function saveEntries(e) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(e));
+    // Also sync to Supabase work_hours table
+    const key = 'tb-work-' + userName;
+    try {
+      fetch(SUPA_URL + '/rest/v1/work_hours', {
+        method: 'POST',
+        headers: {
+          apikey: SUPA_KEY,
+          Authorization: 'Bearer ' + SUPA_KEY,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify({
+          id: 'root-' + userName,
+          data: e,
+          updated_at: new Date().toISOString()
+        })
+      });
+    } catch {}
+  }
+  const [entries, setEntries] = useState(loadEntries);
+  useEffect(() => {
+    loadFromSupabase();
+  }, []);
+  const [running, setRunning] = useState(true);
+  const [paused, setPaused] = useState(false);
+  const [startTime, setStartTime] = useState(() => {
+    const s = localStorage.getItem('tb__timer_start__' + userName);
+    return s ? parseInt(s) : Date.now();
+  });
+  const [pausedAt, setPausedAt] = useState(null);
+  const [totalPaused, setTotalPaused] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [task, setTask] = useState(() => localStorage.getItem('tb__timer_task__' + userName) || '');
+  const [editId, setEditId] = useState(null);
+  const [editData, setEditData] = useState({});
+  const [showAdd, setShowAdd] = useState(false);
+  const [newEntry, setNewEntry] = useState({
+    task: '',
+    date: isoToday(),
+    startStr: '',
+    endStr: '',
+    note: ''
+  });
+  const [showPdf, setShowPdf] = useState(false);
+  const member = TEAM.find(m => m.id === userName);
+
+  // Stoppuhr tick
+  useEffect(() => {
+    if (!running || paused) return;
+    const iv = setInterval(() => setElapsed(Date.now() - startTime - totalPaused), 1000);
+    return () => clearInterval(iv);
+  }, [running, paused, startTime, totalPaused]);
+
+  // Save task while running
+  useEffect(() => {
+    localStorage.setItem('tb__timer_task__' + userName, task);
+  }, [task, userName]);
+  function formatDur(ms) {
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor(s % 3600 / 60);
+    const ss = s % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  }
+  function formatDurShort(ms) {
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor(s % 3600 / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}h ${String(m).padStart(2, '0')}min ${String(sec).padStart(2, '0')}s`;
+    if (m > 0) return `${m}min ${String(sec).padStart(2, '0')}s`;
+    return `${sec}s`;
+  }
+  function timeStrToMs(str) {
+    if (!str) return 0;
+    const [h, m] = str.split(':').map(Number);
+    return ((h || 0) * 60 + (m || 0)) * 60000;
+  }
+  function togglePause() {
+    if (!paused) {
+      setPaused(true);
+      setPausedAt(Date.now());
+    } else {
+      const pauseDur = Date.now() - pausedAt;
+      setTotalPaused(p => p + pauseDur);
+      setPaused(false);
+      setPausedAt(null);
+    }
+  }
+  function stopAndSave() {
+    if (!running) return;
+    const end = Date.now();
+    const dur = end - startTime - totalPaused;
+    if (dur < 1000) return; // ignore < 1s
+    const entry = {
+      id: uid(),
+      userName,
+      task,
+      date: isoToday(),
+      start: startTime,
+      end,
+      dur,
+      note: ''
+    };
+    const updated = [entry, ...entries];
+    setEntries(updated);
+    saveEntries(updated);
+    setRunning(false);
+    localStorage.removeItem('tb__timer_start__' + userName);
+  }
+  function startTimer() {
+    const now = Date.now();
+    setStartTime(now);
+    setRunning(true);
+    setPaused(false);
+    setPausedAt(null);
+    setTotalPaused(0);
+    setElapsed(0);
+    localStorage.setItem('tb__timer_start__' + userName, String(now));
+  }
+  function deleteEntry(id) {
+    const updated = entries.filter(e => e.id !== id);
+    setEntries(updated);
+    saveEntries(updated);
+  }
+  function startEdit(e) {
+    const startStr = new Date(e.start).toLocaleTimeString('de-DE', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    const endStr = new Date(e.end).toLocaleTimeString('de-DE', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    setEditId(e.id);
+    setEditData({
+      task: e.task,
+      date: e.date,
+      startStr,
+      endStr,
+      note: e.note || ''
+    });
+  }
+  function saveEdit(id) {
+    const updated = entries.map(e => {
+      if (e.id !== id) return e;
+      const dateBase = new Date(editData.date + 'T00:00:00').getTime();
+      const start = dateBase + timeStrToMs(editData.startStr);
+      const end = dateBase + timeStrToMs(editData.endStr);
+      return {
+        ...e,
+        task: editData.task,
+        date: editData.date,
+        start,
+        end,
+        dur: Math.max(0, end - start),
+        note: editData.note
+      };
+    });
+    setEntries(updated);
+    saveEntries(updated);
+    setEditId(null);
+  }
+  function addManual() {
+    const dateBase = new Date(newEntry.date + 'T00:00:00').getTime();
+    const start = dateBase + timeStrToMs(newEntry.startStr);
+    const end = dateBase + timeStrToMs(newEntry.endStr);
+    const entry = {
+      id: uid(),
+      userName,
+      task: newEntry.task,
+      date: newEntry.date,
+      start,
+      end,
+      dur: Math.max(0, end - start),
+      note: newEntry.note
+    };
+    const updated = [entry, ...entries];
+    setEntries(updated);
+    saveEntries(updated);
+    setShowAdd(false);
+    setNewEntry({
+      task: '',
+      date: isoToday(),
+      startStr: '',
+      endStr: '',
+      note: ''
+    });
+  }
+  function exportPdf() {
+    const exportEntries = selectedMonth === 'all' ? entries : entries.filter(e => e.date.startsWith(selectedMonth));
+    const rows = exportEntries.map(e => {
+      const d = new Date(e.start);
+      const dateStr = d.toLocaleDateString('de-DE');
+      const startStr = new Date(e.start).toLocaleTimeString('de-DE', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const endStr = new Date(e.end).toLocaleTimeString('de-DE', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      return `<tr><td>${dateStr}</td><td>${startStr}</td><td>${endStr}</td><td>${formatDurShort(e.dur)}</td><td>${e.task || '—'}</td><td>${e.note || ''}</td></tr>`;
+    }).join('');
+    const totalMs = exportEntries.reduce((s, e) => s + e.dur, 0);
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+      body{font-family:sans-serif;padding:30px;color:#1B2A3B}
+      h1{color:#1B2A3B;margin-bottom:4px}
+      h2{color:#8a8070;font-size:14px;font-weight:400;margin-bottom:20px}
+      table{width:100%;border-collapse:collapse;font-size:13px}
+      th{background:#1B2A3B;color:#F4EFE6;padding:8px 10px;text-align:left}
+      td{padding:7px 10px;border-bottom:1px solid #EDE8DF}
+      tr:nth-child(even) td{background:#F4EFE6}
+      .total{margin-top:16px;font-weight:700;font-size:14px;color:#1B2A3B}
+    </style></head><body>
+    <h1>⏱ Zeiterfassung — ${member?.name || userName}</h1>
+    <h2>${formatMonth(selectedMonth)} · Exportiert am ${new Date().toLocaleDateString('de-DE')}</h2>
+    <table><thead><tr><th>Datum</th><th>Von</th><th>Bis</th><th>Dauer</th><th>Aufgabe</th><th>Notiz</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <p class="total">Gesamt: ${formatDurShort(totalMs)}</p>
+    </body></html>`;
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => win.print(), 500);
+  }
+
+  // Month filter state
+  const allMonths = [...new Set(entries.map(e => e.date.slice(0, 7)))].sort((a, b) => b.localeCompare(a));
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const filteredEntries = selectedMonth === 'all' ? entries : entries.filter(e => e.date.startsWith(selectedMonth));
+
+  // Group by date
+  const grouped = {};
+  filteredEntries.forEach(e => {
+    if (!grouped[e.date]) grouped[e.date] = [];
+    grouped[e.date].push(e);
+  });
+  const dates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+  const monthTotal = filteredEntries.reduce((s, e) => s + e.dur, 0);
+  function formatMonth(ym) {
+    if (ym === 'all') return 'Alle';
+    const [y, m] = ym.split('-');
+    const months = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+    return months[parseInt(m) - 1] + ' ' + y;
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "16px",
+      maxWidth: 680,
+      margin: "0 auto"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#1B2A3B",
+      borderRadius: 18,
+      padding: "20px 22px",
+      marginBottom: 16,
+      color: "#F4EFE6"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 800,
+      color: "#7a9aaa",
+      letterSpacing: 1.5,
+      textTransform: "uppercase",
+      marginBottom: 10,
+      fontFamily: F
+    }
+  }, "\u23F1 Laufende Session"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 48,
+      fontWeight: 800,
+      fontFamily: "monospace",
+      color: !running ? "#7a9aaa" : paused ? "#4ECDC4" : "#C9A96E",
+      marginBottom: 14,
+      letterSpacing: 2
+    }
+  }, formatDur(elapsed)), /*#__PURE__*/React.createElement("input", {
+    value: task,
+    onChange: e => setTask(e.target.value),
+    placeholder: "Was arbeitest du gerade? (optional)",
+    style: {
+      width: "100%",
+      boxSizing: "border-box",
+      padding: "10px 14px",
+      borderRadius: 10,
+      border: "1px solid rgba(255,255,255,.1)",
+      background: "rgba(255,255,255,.07)",
+      color: "#F4EFE6",
+      fontSize: 13,
+      fontFamily: F,
+      outline: "none",
+      marginBottom: 12
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, running ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+    onClick: togglePause,
+    style: {
+      flex: 1,
+      padding: "11px",
+      borderRadius: 12,
+      background: paused ? "#C9A96E" : "rgba(255,255,255,.1)",
+      color: paused ? "#1B2A3B" : "#F4EFE6",
+      border: "none",
+      fontSize: 14,
+      fontWeight: 800,
+      cursor: "pointer",
+      fontFamily: F
+    }
+  }, paused ? "▶ Weiter" : "⏸ Pause"), /*#__PURE__*/React.createElement("button", {
+    onClick: stopAndSave,
+    style: {
+      flex: 1,
+      padding: "11px",
+      borderRadius: 12,
+      background: "#E63946",
+      color: "#fff",
+      border: "none",
+      fontSize: 14,
+      fontWeight: 800,
+      cursor: "pointer",
+      fontFamily: F
+    }
+  }, "\u23F9 Stoppen")) : /*#__PURE__*/React.createElement("button", {
+    onClick: startTimer,
+    style: {
+      flex: 1,
+      padding: "11px",
+      borderRadius: 12,
+      background: "#C9A96E",
+      color: "#1B2A3B",
+      border: "none",
+      fontSize: 14,
+      fontWeight: 800,
+      cursor: "pointer",
+      fontFamily: F
+    }
+  }, "\u25B6 Starten"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowAdd(true),
+    style: {
+      flex: 1,
+      padding: "9px",
+      borderRadius: 10,
+      background: CARD,
+      border: `1.5px solid ${BORD}`,
+      color: DARK,
+      fontSize: 12,
+      fontWeight: 800,
+      cursor: "pointer",
+      fontFamily: F
+    }
+  }, "+ Manuell eintragen"), /*#__PURE__*/React.createElement("button", {
+    onClick: exportPdf,
+    style: {
+      padding: "9px 14px",
+      borderRadius: 10,
+      background: "#2A9D8F",
+      color: "#fff",
+      border: "none",
+      fontSize: 12,
+      fontWeight: 800,
+      cursor: "pointer",
+      fontFamily: F
+    }
+  }, "\uD83D\uDCC4 PDF ", formatMonth(selectedMonth))), showAdd && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      borderRadius: 14,
+      padding: "16px",
+      marginBottom: 16,
+      border: `1.5px solid ${BORD}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: MUTED,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+      marginBottom: 12,
+      fontFamily: F
+    }
+  }, "Eintrag hinzuf\xFCgen"), /*#__PURE__*/React.createElement("input", {
+    value: newEntry.task,
+    onChange: e => setNewEntry(x => ({
+      ...x,
+      task: e.target.value
+    })),
+    placeholder: "Aufgabe / T\xE4tigkeit",
+    style: {
+      width: "100%",
+      boxSizing: "border-box",
+      padding: "9px 12px",
+      borderRadius: 9,
+      border: `1.5px solid ${BORD}`,
+      fontSize: 13,
+      background: BG,
+      color: DARK,
+      outline: "none",
+      fontFamily: F,
+      marginBottom: 8
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: 8,
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      fontWeight: 800,
+      color: MUTED,
+      fontFamily: F,
+      marginBottom: 4
+    }
+  }, "DATUM"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: newEntry.date,
+    onChange: e => setNewEntry(x => ({
+      ...x,
+      date: e.target.value
+    })),
+    style: {
+      width: "100%",
+      padding: "8px",
+      borderRadius: 8,
+      border: `1.5px solid ${BORD}`,
+      fontSize: 12,
+      background: BG,
+      color: DARK,
+      outline: "none"
+    }
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      fontWeight: 800,
+      color: MUTED,
+      fontFamily: F,
+      marginBottom: 4
+    }
+  }, "VON"), /*#__PURE__*/React.createElement("input", {
+    type: "time",
+    value: newEntry.startStr,
+    onChange: e => setNewEntry(x => ({
+      ...x,
+      startStr: e.target.value
+    })),
+    style: {
+      width: "100%",
+      padding: "8px",
+      borderRadius: 8,
+      border: `1.5px solid ${BORD}`,
+      fontSize: 12,
+      background: BG,
+      color: DARK,
+      outline: "none"
+    }
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      fontWeight: 800,
+      color: MUTED,
+      fontFamily: F,
+      marginBottom: 4
+    }
+  }, "BIS"), /*#__PURE__*/React.createElement("input", {
+    type: "time",
+    value: newEntry.endStr,
+    onChange: e => setNewEntry(x => ({
+      ...x,
+      endStr: e.target.value
+    })),
+    style: {
+      width: "100%",
+      padding: "8px",
+      borderRadius: 8,
+      border: `1.5px solid ${BORD}`,
+      fontSize: 12,
+      background: BG,
+      color: DARK,
+      outline: "none"
+    }
+  }))), /*#__PURE__*/React.createElement("input", {
+    value: newEntry.note,
+    onChange: e => setNewEntry(x => ({
+      ...x,
+      note: e.target.value
+    })),
+    placeholder: "Notiz (optional)",
+    style: {
+      width: "100%",
+      boxSizing: "border-box",
+      padding: "9px 12px",
+      borderRadius: 9,
+      border: `1.5px solid ${BORD}`,
+      fontSize: 12,
+      background: BG,
+      color: DARK,
+      outline: "none",
+      fontFamily: F,
+      marginBottom: 10
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowAdd(false),
+    style: {
+      flex: 1,
+      padding: "9px",
+      borderRadius: 9,
+      background: "transparent",
+      border: `1.5px solid ${BORD}`,
+      color: MUTED,
+      fontSize: 12,
+      cursor: "pointer",
+      fontFamily: F
+    }
+  }, "Abbrechen"), /*#__PURE__*/React.createElement("button", {
+    onClick: addManual,
+    style: {
+      flex: 2,
+      padding: "9px",
+      borderRadius: 9,
+      background: DARK,
+      color: "#F4EFE6",
+      border: "none",
+      fontSize: 12,
+      fontWeight: 800,
+      cursor: "pointer",
+      fontFamily: F
+    }
+  }, "Speichern"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 800,
+      color: MUTED,
+      letterSpacing: 1.5,
+      textTransform: "uppercase",
+      marginBottom: 8,
+      fontFamily: F
+    }
+  }, "Monat"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexWrap: "wrap"
+    }
+  }, ['all', ...allMonths].map(m => /*#__PURE__*/React.createElement("button", {
+    key: m,
+    onClick: () => setSelectedMonth(m),
+    style: {
+      padding: "6px 14px",
+      borderRadius: 20,
+      fontSize: 12,
+      fontWeight: 800,
+      cursor: "pointer",
+      fontFamily: F,
+      background: selectedMonth === m ? "#1B2A3B" : CARD,
+      color: selectedMonth === m ? "#F4EFE6" : MUTED,
+      border: `1.5px solid ${selectedMonth === m ? "#1B2A3B" : BORD}`
+    }
+  }, formatMonth(m))))), filteredEntries.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#FDFAF5",
+      borderRadius: 12,
+      padding: "12px 16px",
+      marginBottom: 16,
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      border: "1.5px solid #EDE8DF",
+      boxShadow: "0 2px 8px rgba(27,42,59,.06)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: MUTED,
+      fontFamily: F,
+      fontWeight: 700
+    }
+  }, "Gesamt ", formatMonth(selectedMonth)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 20,
+      fontWeight: 800,
+      color: "#1B2A3B",
+      fontFamily: "monospace"
+    }
+  }, formatDur(monthTotal))), dates.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      color: MUTED,
+      padding: "40px 0",
+      fontFamily: F,
+      fontSize: 13
+    }
+  }, "Noch keine Eintr\xE4ge. Starte die Stoppuhr oder trage manuell ein."), dates.map(date => {
+    const dayEntries = grouped[date];
+    const dayTotal = dayEntries.reduce((s, e) => s + e.dur, 0);
+    const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('de-DE', {
+      weekday: 'long',
+      day: '2-digit',
+      month: 'long'
+    });
+    return /*#__PURE__*/React.createElement("div", {
+      key: date,
+      style: {
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        fontWeight: 800,
+        color: DARK,
+        fontFamily: FS
+      }
+    }, dateLabel), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#C9A96E",
+        fontFamily: F
+      }
+    }, "Gesamt: ", formatDurShort(dayTotal))), dayEntries.map(e => {
+      const startStr = new Date(e.start).toLocaleTimeString('de-DE', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const endStr = new Date(e.end).toLocaleTimeString('de-DE', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const isEditing = editId === e.id;
+      return /*#__PURE__*/React.createElement("div", {
+        key: e.id,
+        style: {
+          background: CARD,
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 8,
+          border: `1.5px solid ${BORD}`
+        }
+      }, isEditing ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("input", {
+        value: editData.task,
+        onChange: ev => setEditData(x => ({
+          ...x,
+          task: ev.target.value
+        })),
+        placeholder: "Aufgabe",
+        style: {
+          width: "100%",
+          boxSizing: "border-box",
+          padding: "8px 10px",
+          borderRadius: 8,
+          border: `1.5px solid ${BORD}`,
+          fontSize: 13,
+          background: BG,
+          color: DARK,
+          outline: "none",
+          fontFamily: F,
+          marginBottom: 8
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 7,
+          marginBottom: 8
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "date",
+        value: editData.date,
+        onChange: ev => setEditData(x => ({
+          ...x,
+          date: ev.target.value
+        })),
+        style: {
+          padding: "7px",
+          borderRadius: 7,
+          border: `1.5px solid ${BORD}`,
+          fontSize: 11,
+          background: BG,
+          color: DARK,
+          outline: "none"
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        type: "time",
+        value: editData.startStr,
+        onChange: ev => setEditData(x => ({
+          ...x,
+          startStr: ev.target.value
+        })),
+        style: {
+          padding: "7px",
+          borderRadius: 7,
+          border: `1.5px solid ${BORD}`,
+          fontSize: 11,
+          background: BG,
+          color: DARK,
+          outline: "none"
+        }
+      }), /*#__PURE__*/React.createElement("input", {
+        type: "time",
+        value: editData.endStr,
+        onChange: ev => setEditData(x => ({
+          ...x,
+          endStr: ev.target.value
+        })),
+        style: {
+          padding: "7px",
+          borderRadius: 7,
+          border: `1.5px solid ${BORD}`,
+          fontSize: 11,
+          background: BG,
+          color: DARK,
+          outline: "none"
+        }
+      })), /*#__PURE__*/React.createElement("input", {
+        value: editData.note,
+        onChange: ev => setEditData(x => ({
+          ...x,
+          note: ev.target.value
+        })),
+        placeholder: "Notiz",
+        style: {
+          width: "100%",
+          boxSizing: "border-box",
+          padding: "8px 10px",
+          borderRadius: 8,
+          border: `1.5px solid ${BORD}`,
+          fontSize: 12,
+          background: BG,
+          color: DARK,
+          outline: "none",
+          fontFamily: F,
+          marginBottom: 8
+        }
+      }), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          gap: 7
+        }
+      }, /*#__PURE__*/React.createElement("button", {
+        onClick: () => setEditId(null),
+        style: {
+          flex: 1,
+          padding: "8px",
+          borderRadius: 8,
+          background: "transparent",
+          border: `1.5px solid ${BORD}`,
+          color: MUTED,
+          fontSize: 12,
+          cursor: "pointer",
+          fontFamily: F
+        }
+      }, "Abbrechen"), /*#__PURE__*/React.createElement("button", {
+        onClick: () => saveEdit(e.id),
+        style: {
+          flex: 2,
+          padding: "8px",
+          borderRadius: 8,
+          background: DARK,
+          color: "#F4EFE6",
+          border: "none",
+          fontSize: 12,
+          fontWeight: 800,
+          cursor: "pointer",
+          fontFamily: F
+        }
+      }, "Speichern"))) : /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 14,
+          fontWeight: 700,
+          color: DARK,
+          fontFamily: F,
+          marginBottom: 3
+        }
+      }, e.task || /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: MUTED,
+          fontStyle: "italic"
+        }
+      }, "Keine Aufgabe")), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          gap: 10,
+          alignItems: "center"
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: MUTED,
+          fontFamily: F
+        }
+      }, startStr, " \u2013 ", endStr), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          fontWeight: 800,
+          color: "#C9A96E",
+          fontFamily: F
+        }
+      }, formatDurShort(e.dur)), e.note && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11,
+          color: MUTED,
+          fontFamily: F
+        }
+      }, "\xB7 ", e.note))), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          gap: 6
+        }
+      }, /*#__PURE__*/React.createElement("button", {
+        onClick: () => startEdit(e),
+        style: {
+          padding: "5px 10px",
+          borderRadius: 7,
+          background: "transparent",
+          border: `1px solid ${BORD}`,
+          color: MUTED,
+          fontSize: 11,
+          cursor: "pointer",
+          fontFamily: F
+        }
+      }, "\u270F\uFE0F"), /*#__PURE__*/React.createElement("button", {
+        onClick: () => deleteEntry(e.id),
+        style: {
+          padding: "5px 10px",
+          borderRadius: 7,
+          background: "transparent",
+          border: "1px solid #FF6B6B",
+          color: "#FF6B6B",
+          fontSize: 11,
+          cursor: "pointer"
+        }
+      }, "\u2715"))));
+    }));
+  }));
+}
+
 // ─── APP ──────────────────────────────────────────────────────────────────────
 function App() {
   const [tab, setTab] = useState("content");
@@ -7630,6 +8545,7 @@ function App() {
       return "";
     }
   });
+  const [loginTime] = useState(() => Date.now());
   const [nameInput, setNameInput] = useState("");
   const [showHome, setShowHome] = useState(true);
   const [avatar, setAvatar] = useState(() => {
@@ -7755,11 +8671,14 @@ function App() {
     }
   }, "Team Board"), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 14,
-      color: "#7a9aaa",
-      marginBottom: 28
+      fontSize: 15,
+      color: "#C9A96E",
+      marginBottom: 28,
+      fontFamily: FS,
+      fontStyle: "italic",
+      lineHeight: 1.5
     }
-  }, "Jessica \xB7 Kai \xB7 Jacqueline \xB7 Pauline"), /*#__PURE__*/React.createElement("div", {
+  }, "Herzlich willkommen & sch\xF6nen Arbeitstag f\xFCr dich \uD83E\uDD0D"), /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 20
     }
@@ -7870,6 +8789,11 @@ function App() {
       label: "Mindmap",
       icon: "🧠",
       color: "#5C7AEA"
+    }, {
+      id: "zeiten",
+      label: "Zeiterfassung",
+      icon: "⏱️",
+      color: "#E63946"
     }];
     return /*#__PURE__*/React.createElement("div", {
       style: {
@@ -7949,7 +8873,14 @@ function App() {
         fontWeight: 700,
         color: "#F4EFE6"
       }
-    }, "Hallo ", member?.name, " \uD83D\uDC4B"), /*#__PURE__*/React.createElement("button", {
+    }, "Hallo ", member?.name, " \uD83D\uDC4B"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: "#7a9aaa",
+        marginTop: 6,
+        fontFamily: F
+      }
+    }, "Herzlich willkommen & sch\xF6nen Arbeitstag f\xFCr dich \uD83E\uDD0D"), /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         setUserName("");
         localStorage.removeItem("tb__username");
@@ -8075,13 +9006,17 @@ function App() {
   }, {
     id: "mindmap",
     label: "🧠 Mindmap"
+  }, {
+    id: "zeiten",
+    label: "⏱️ Zeiterfassung"
   }];
   return /*#__PURE__*/React.createElement("div", {
     style: {
       minHeight: "100vh",
       background: BG,
       fontFamily: F,
-      overflowX: "hidden"
+      overflowX: "hidden",
+      overflowY: "auto"
     }
   }, FONT_LINK, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -8097,13 +9032,19 @@ function App() {
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
       fontFamily: FS,
       fontSize: 19,
       fontWeight: 700,
       color: "#F4EFE6",
       letterSpacing: ".3px"
     }
-  }, "\u2728 Team Board"), /*#__PURE__*/React.createElement("div", {
+  }, "\u2728 Team Board")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -8154,9 +9095,26 @@ function App() {
       background: "#243547",
       display: "flex",
       overflowX: "auto",
-      borderBottom: "2px solid #1a2535"
+      borderBottom: "2px solid #1a2535",
+      alignItems: "center"
     }
-  }, TABS.map(t => /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowHome(true),
+    style: {
+      flexShrink: 0,
+      margin: "0 8px",
+      padding: "6px 14px",
+      background: "rgba(201,169,110,.15)",
+      border: "1px solid rgba(201,169,110,.4)",
+      borderRadius: 8,
+      color: "#C9A96E",
+      fontSize: 11,
+      fontWeight: 800,
+      cursor: "pointer",
+      fontFamily: F,
+      whiteSpace: "nowrap"
+    }
+  }, "\u229E \xDCbersicht"), TABS.map(t => /*#__PURE__*/React.createElement("button", {
     key: t.id,
     onClick: () => setTab(t.id),
     style: {
@@ -8383,7 +9341,9 @@ function App() {
     setNotes: setNotes,
     saveNotes: saveNotes,
     userName: userName
-  }), tab === "mindmap" && /*#__PURE__*/React.createElement(MindmapTab, null), /*#__PURE__*/React.createElement("style", null, `
+  }), tab === "mindmap" && /*#__PURE__*/React.createElement(MindmapTab, null), tab === "zeiten" && /*#__PURE__*/React.createElement(ZeiterfassungView, {
+    userName: userName
+  }), /*#__PURE__*/React.createElement("style", null, `
         @media(max-width:480px){.kg,.tc,.lg{grid-template-columns:1fr!important;}}
         @media(max-width:700px){.kg{grid-template-columns:repeat(2,1fr)!important;}.tc{grid-template-columns:1fr!important;}}
         @media(max-width:1100px){.kg{grid-template-columns:repeat(3,1fr)!important;}}
