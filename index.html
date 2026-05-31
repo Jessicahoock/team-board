@@ -498,7 +498,6 @@ function MindmapPreview() {
     x: 70,
     y: 50
   });
-  const [zoom, setZoom] = useState(1);
   const [panning, setPanning] = useState(false);
   const [panStart, setPanStart] = useState({
     x: 0,
@@ -706,6 +705,38 @@ function MindmapPreview() {
     });
     setSelected(null);
   }
+  function exportPdf() {
+    const activeMap = maps.find(m => m.id === activeMapId);
+    if (!activeMap) return;
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    // Get SVG content
+    const svgClone = svgEl.cloneNode(true);
+    // Set viewBox to fit all nodes
+    const xs = activeMap.nodes.map(n => n.x);
+    const ys = activeMap.nodes.map(n => n.y);
+    const minX = Math.min(...xs) - 80;
+    const minY = Math.min(...ys) - 80;
+    const maxX = Math.max(...xs) + 280;
+    const maxY = Math.max(...ys) + 200;
+    const w = maxX - minX;
+    const h = maxY - minY;
+    svgClone.setAttribute('viewBox', `${minX} ${minY} ${w} ${h}`);
+    svgClone.setAttribute('width', w);
+    svgClone.setAttribute('height', h);
+    const svgStr = new XMLSerializer().serializeToString(svgClone);
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>${activeMap.name}</title>
+      <style>body{margin:20px;background:#F0EBE1;font-family:sans-serif}
+      h1{color:#1B2A3B;font-size:18px;margin-bottom:12px}
+      svg{max-width:100%;border-radius:12px;background:#F0EBE1}
+      @media print{body{margin:0}h1{display:none}}</style></head>
+      <body><h1>🧠 ${activeMap.name}</h1>${svgStr}</body></html>`);
+    win.document.close();
+    setTimeout(() => win.print(), 600);
+  }
+
   function deleteMap(id) {
     if (maps.length <= 1) return;
     const newMaps = maps.filter(m => m.id !== id);
@@ -867,7 +898,7 @@ function MindmapPreview() {
       whiteSpace: "nowrap",
       flexShrink: 0
     }
-  }, "+ Neue Map")), /*#__PURE__*/React.createElement("div", {
+  }, "+ Neue Map")), /*#__PURE__*/React.createElement("button", { onClick: exportPdf, title: "Als PDF exportieren", style: { background: "none", border: "none", color: "#C9A96E", cursor: "pointer", fontSize: 13, padding: "10px 12px", fontFamily: F, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 } }, "📄 PDF")), /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#2C3E50",
       padding: "6px 16px",
@@ -996,12 +1027,7 @@ function MindmapPreview() {
     onDoubleClick: addNode,
     onMouseMove: onMouseMove,
     onMouseUp: onMouseUp,
-    onMouseDown: onBgDown,
-    onWheel: e => {
-      e.preventDefault();
-      const factor = e.deltaY > 0 ? 0.9 : 1.1;
-      setZoom(z => Math.min(Math.max(z * factor, 0.2), 4));
-    }
+    onMouseDown: onBgDown
   }, /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("pattern", {
     id: "grid",
     width: "30",
@@ -1024,7 +1050,7 @@ function MindmapPreview() {
     d: "M0,0 L0,6 L8,3 z",
     fill: "#A0988C"
   }))), /*#__PURE__*/React.createElement("g", {
-    transform: `translate(${pan.x},${pan.y}) scale(${zoom})`
+    transform: `translate(${pan.x},${pan.y})`
   }, /*#__PURE__*/React.createElement("rect", {
     x: "-4000",
     y: "-4000",
