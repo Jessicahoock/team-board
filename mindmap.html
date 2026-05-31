@@ -529,13 +529,11 @@ function MindmapPreview() {
   }
   const getPt = useCallback(e => {
     const r = svgRef.current?.getBoundingClientRect();
-    if (!r) return {
-      x: 0,
-      y: 0
-    };
+    if (!r) return { x: 0, y: 0 };
+    const src = e.touches ? e.touches[0] : e;
     return {
-      x: e.clientX - r.left - pan.x,
-      y: e.clientY - r.top - pan.y
+      x: src.clientX - r.left - pan.x,
+      y: src.clientY - r.top - pan.y
     };
   }, [pan]);
 
@@ -668,33 +666,49 @@ function MindmapPreview() {
     } else if (e.touches.length === 2) {
       e.preventDefault();
       setPanning(false);
+      setDragging(null);
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       window.__pinchDist = Math.hypot(dx, dy);
       window.__pinchZoom = zoom;
+      window.__pinchMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      window.__pinchMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     }
   }
 
   function onTouchMove(e) {
     e.preventDefault();
-    if (e.touches.length === 1 && panning) {
+    if (e.touches.length === 1) {
       const t = e.touches[0];
-      setPan({ x: t.clientX - panStart.x, y: t.clientY - panStart.y });
-    } else if (e.touches.length === 2) {
+      if (panning) {
+        setPan({ x: t.clientX - panStart.x, y: t.clientY - panStart.y });
+      } else if (dragging) {
+        const r = svgRef.current?.getBoundingClientRect() || { left:0, top:0 };
+        const pt = { x: t.clientX - r.left - pan.x, y: t.clientY - r.top - pan.y };
+        const dx = pt.x - dragOff.x;
+        const dy = pt.y - dragOff.y;
+        const node = nodes.find(n => n.id === dragging);
+        if (node) {
+          const moveDx = dx - node.x;
+          const moveDy = dy - node.y;
+          const toMove = new Set([dragging, ...dragDescendants]);
+          setNodes(p => p.map(n => toMove.has(n.id) ? {...n, x: n.x + moveDx, y: n.y + moveDy} : n));
+        }
+      }
+    } else if (e.touches.length === 2 && window.__pinchDist) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const dist = Math.hypot(dx, dy);
-      if (window.__pinchDist) {
-        const factor = dist / window.__pinchDist;
-        const newZoom = Math.min(Math.max((window.__pinchZoom || 1) * factor, 0.2), 4);
-        setZoom(newZoom);
-      }
+      const factor = dist / window.__pinchDist;
+      const newZoom = Math.min(Math.max((window.__pinchZoom || 1) * factor, 0.2), 4);
+      setZoom(newZoom);
     }
   }
 
   function onTouchEnd(e) {
     if (e.touches.length === 0) {
       setPanning(false);
+      setDragging(null);
       window.__pinchDist = null;
     }
   }
@@ -1171,6 +1185,13 @@ function MindmapPreview() {
       },
       onMouseDown: e => {
         if (!editId) startDrag(e, node.id);
+      },
+      onTouchStart: e => {
+        if (!editId && e.touches.length === 1) {
+          e.stopPropagation();
+          e.preventDefault();
+          startDrag(e, node.id);
+        }
       },
       onDoubleClick: e => {
         e.stopPropagation();
